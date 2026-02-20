@@ -64,7 +64,7 @@ class VeilidNet:
         """Connect to the local veilid-server daemon."""
         self.running = True
         self._notify("Connecting to veilid-server...")
-        self.api = await veilid.api_connector(self._update_callback)
+        self.api = await veilid.json_api_connect("localhost", 5959, self._update_callback)
         self.rc = await (await self.api.new_routing_context()).with_default_safety()
 
         # Create a private route so the peer can reach us
@@ -128,7 +128,7 @@ class VeilidNet:
         self.is_host = True
 
         record = await self.rc.create_dht_record(
-            veilid.DHTSchema.dflt(2), veilid.CryptoKind.CRYPTO_KIND_VLD0
+            veilid.CryptoKind.CRYPTO_KIND_VLD0, veilid.DHTSchema.dflt(2)
         )
         self.dht_key = record.key
         self.dht_owner_keypair = veilid.KeyPair(

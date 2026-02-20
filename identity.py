@@ -56,7 +56,7 @@ class Identity:
     async def _create_new(self, api, rc, handle):
         """Create a fresh profile DHT record and persist locally."""
         schema = veilid.DHTSchema.dflt(2)
-        record = await rc.create_dht_record(schema)
+        record = await rc.create_dht_record(veilid.CryptoKind.CRYPTO_KIND_VLD0, schema)
         self.profile_key = record.key
         self.owner_keypair = record.owner_key_pair()
         self.handle = handle

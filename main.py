@@ -28,6 +28,7 @@ import curses
 import sys
 
 from ascii_camera import AsciiCamera
+from bootstrap import ensure_veilid_server, stop_veilid_server
 from chat import Chat
 from identity import Identity
 from directory import Directory
@@ -114,6 +115,7 @@ async def run(stdscr, args):
             await net.join_room(args.join)
         else:
             room_code = await net.create_room()
+            ui.room_code = room_code
     except Exception as exc:
         ui.set_status(f"Veilid: {exc}")
 
@@ -261,6 +263,9 @@ async def _handle_command(text, ui, net, chat, camera, identity, args):
         return True
 
     if cmd == "/call":
+        if not net.rc:
+            ui.add_chat("[sys] Veilid not connected")
+            return True
         if not arg:
             ui.add_chat("[sys] Usage: /call <profile_key>")
             return True
@@ -284,6 +289,10 @@ async def _handle_command(text, ui, net, chat, camera, identity, args):
     # ── Directory commands ──
 
     if cmd == "/dir":
+        if not net.api or not net.rc:
+            ui.add_chat("[sys] Veilid not connected")
+            return True
+
         sub_parts = arg.split(maxsplit=1)
         sub = sub_parts[0].lower() if sub_parts else ""
 
@@ -482,6 +491,10 @@ def main():
     )
     args = parser.parse_args()
 
+    # Ensure veilid-server is running before entering curses mode
+    # so build/startup output is visible in the terminal.
+    veilid_proc, we_started = ensure_veilid_server()
+
     def wrapper(stdscr):
         asyncio.run(run(stdscr, args))
 
@@ -489,6 +502,8 @@ def main():
         curses.wrapper(wrapper)
     except KeyboardInterrupt:
         pass
+    finally:
+        stop_veilid_server(veilid_proc, we_started)
 
 
 if __name__ == "__main__":

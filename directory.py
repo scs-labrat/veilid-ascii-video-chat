@@ -69,7 +69,7 @@ class Directory:
         self._db = await api.open_table_db("ascii_chat_directory", 1)
 
         schema = veilid.DHTSchema.dflt(64)
-        record = await rc.create_dht_record(schema)
+        record = await rc.create_dht_record(veilid.CryptoKind.CRYPTO_KIND_VLD0, schema)
         self.dir_key = record.key
         self.dir_keypair = record.owner_key_pair()
 
@@ -139,12 +139,13 @@ class Directory:
             vd = await rc.get_dht_value(
                 self.dir_key, veilid.ValueSubkey(subkey), True
             )
+            write_opts = veilid.types.SetDHTValueOptions(writer=self.dir_keypair)
             if vd is None or vd.data == b"" or vd.data == b"{}":
                 await rc.set_dht_value(
                     self.dir_key,
                     veilid.ValueSubkey(subkey),
                     data,
-                    writer=self.dir_keypair,
+                    options=write_opts,
                 )
                 return short
 
@@ -156,7 +157,7 @@ class Directory:
                         self.dir_key,
                         veilid.ValueSubkey(subkey),
                         data,
-                        writer=self.dir_keypair,
+                        options=write_opts,
                     )
                     return short
             except (json.JSONDecodeError, UnicodeDecodeError):
@@ -165,7 +166,7 @@ class Directory:
                     self.dir_key,
                     veilid.ValueSubkey(subkey),
                     data,
-                    writer=self.dir_keypair,
+                    options=write_opts,
                 )
                 return short
 
@@ -183,11 +184,12 @@ class Directory:
                     continue
                 existing = json.loads(vd.data.decode())
                 if existing.get("room") == room_str:
+                    write_opts = veilid.types.SetDHTValueOptions(writer=self.dir_keypair)
                     await rc.set_dht_value(
                         self.dir_key,
                         veilid.ValueSubkey(subkey),
                         json.dumps({"room": None}).encode(),
-                        writer=self.dir_keypair,
+                        options=write_opts,
                     )
                     return
             except Exception:

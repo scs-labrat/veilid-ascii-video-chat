@@ -20,7 +20,18 @@
       "Bash(python -m pytest:*)",
       "Bash(pip install:*)",
       "Bash(git init:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(veilid-server:*)",
+      "Bash(cargo --version:*)",
+      "Bash(rustc:*)",
+      "Bash(pip show:*)",
+      "Bash(where:*)",
+      "Bash(git ls-remote:*)",
+      "Bash(\"C:\\\\Users\\\\d8rh8r\\\\Downloads\\\\Applied Security\\\\ascii-veilid-chat\\\\veilid\\\\target\\\\release\\\\veilid-server.exe\" --help)",
+      "Bash(\"C:\\\\Users\\\\d8rh8r\\\\Downloads\\\\Applied Security\\\\ascii-veilid-chat\\\\veilid\\\\target\\\\release\\\\veilid-server.exe\" --dump-config)",
+      "Bash(taskkill:*)",
+      "Bash(git remote add:*)"
     ]
   }
 }

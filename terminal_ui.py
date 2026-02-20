@@ -48,6 +48,9 @@ class TerminalUI:
         # Status
         self.status_text = "Starting..."
 
+        # Room code (shown on its own full-width line for easy copying)
+        self.room_code = None
+
         # Curses setup
         curses.curs_set(1)
         stdscr.nodelay(True)
@@ -89,18 +92,31 @@ class TerminalUI:
         self.chat_w = max(22, w // 4)
         self.video_w = w - self.chat_w - 1  # 1 col for divider
 
-        # Vertical: status (1) + input (1) at bottom
-        self.video_h = h - 2
+        # Reserve lines at bottom: room-code (if shown) + status + input
+        self.show_room_bar = self.room_code is not None and self.remote_frame is None
+        bottom_rows = 2 + (1 if self.show_room_bar else 0)
+        self.video_h = h - bottom_rows
 
-        if self.show_local:
+        has_peer = self.remote_frame is not None
+
+        if has_peer:
+            # Split: remote gets 2/3, local gets 1/3
             self.remote_h = max(1, (self.video_h * 2) // 3)
-            self.local_h = self.video_h - self.remote_h
+            self.local_h = self.video_h - self.remote_h if self.show_local else 0
         else:
-            self.remote_h = self.video_h
-            self.local_h = 0
+            # Solo: local camera fills the entire video area
+            self.remote_h = 0
+            self.local_h = self.video_h if self.show_local else 0
 
-        self.status_y = h - 2
-        self.input_y = h - 1
+        # Bottom bar positions
+        y = self.video_h
+        if self.show_room_bar:
+            self.room_bar_y = y
+            y += 1
+        else:
+            self.room_bar_y = -1
+        self.status_y = y
+        self.input_y = y + 1
 
     # ------------------------------------------------------------------
     # Public setters
@@ -132,17 +148,23 @@ class TerminalUI:
             if self.term_w < self.MIN_WIDTH or self.term_h < self.MIN_HEIGHT:
                 self._draw_too_small()
             else:
-                self._draw_video_panel(
-                    self.remote_frame, self.remote_colors,
-                    0, 0, self.remote_h, self.video_w, "REMOTE",
-                )
+                has_peer = self.remote_frame is not None
+                if has_peer and self.remote_h > 0:
+                    self._draw_video_panel(
+                        self.remote_frame, self.remote_colors,
+                        0, 0, self.remote_h, self.video_w, "REMOTE",
+                    )
                 if self.show_local and self.local_h > 0:
+                    local_y = self.remote_h if has_peer else 0
+                    label = "LOCAL" if has_peer else "YOU"
                     self._draw_video_panel(
                         self.local_frame, self.local_colors,
-                        self.remote_h, 0, self.local_h, self.video_w, "LOCAL",
+                        local_y, 0, self.local_h, self.video_w, label,
                     )
                 self._draw_divider()
                 self._draw_chat()
+                if self.show_room_bar:
+                    self._draw_room_bar()
                 self._draw_status()
                 self._draw_input()
 
@@ -239,6 +261,21 @@ class TerminalUI:
                 self.stdscr.addnstr(y, x_off, line, self.chat_w - 1)
             except curses.error:
                 pass
+
+    def _draw_room_bar(self):
+        """Draw the room code on its own full-width line for easy selection."""
+        if self.room_bar_y < 0 or not self.room_code:
+            return
+        bar = f" Room: {self.room_code} "
+        try:
+            self.stdscr.addnstr(
+                self.room_bar_y, 0,
+                bar.ljust(self.term_w),
+                self.term_w - 1,
+                curses.A_BOLD,
+            )
+        except curses.error:
+            pass
 
     def _draw_status(self):
         bar = f" {self.status_text} "

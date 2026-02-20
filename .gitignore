@@ -20,3 +20,7 @@ Desktop.ini
 # BMAD memory (session-specific)
 _bmad-output/
 _bmad/_memory/
+
+# Veilid
+veilid/
+veilid-server.log

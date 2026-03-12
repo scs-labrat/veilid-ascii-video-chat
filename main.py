@@ -13,6 +13,9 @@ In-app commands
   /preview       Toggle local camera preview
   /fps <n>       Change send frame-rate
   /cam           Camera controls (list/switch/on/off)
+  /mic on|off    Enable / disable microphone
+  /speaker on|off  Enable / disable speaker
+  /devices       List audio input devices
   /handle <name> Set your display name
   /whoami        Show your identity info
   /call <key>    Look up a profile and join their room
@@ -28,6 +31,7 @@ import curses
 import sys
 
 from ascii_camera import AsciiCamera
+from audio_io import AudioCapture, AudioPlayback
 from bootstrap import ensure_veilid_server, stop_veilid_server
 from chat import Chat
 from identity import Identity
@@ -42,12 +46,15 @@ from veilid_net import VeilidNet
 async def run(stdscr, args):
     # --- Instantiate modules ---
     camera = AsciiCamera(args.width, args.height, device=args.camera)
+    mic = AudioCapture()
+    speaker = AudioPlayback()
     net = VeilidNet()
     chat = Chat()
     ui = TerminalUI(stdscr, color=args.color, show_local=not args.no_preview)
 
     room_code = ""
     identity = None
+    mic_active = False  # mic starts off; user enables with /mic on
 
     ui.add_chat("[sys] Type /help for a list of commands")
 
@@ -60,6 +67,9 @@ async def run(stdscr, args):
         msg = chat.receive(text, timestamp, handle=handle)
         ui.add_chat(Chat.format_message(msg))
 
+    def on_remote_audio(seq, pcm_bytes):
+        speaker.enqueue(pcm_bytes)
+
     def on_status(text):
         ui.set_status(text)
 
@@ -68,8 +78,17 @@ async def run(stdscr, args):
 
     net.on_frame = on_remote_frame
     net.on_chat = on_remote_chat
+    net.on_audio = on_remote_audio
     net.on_status = on_status
     chat.on_send = on_chat_send
+
+    # --- Start audio playback (always ready to receive) ---
+    speaker_ok = False
+    try:
+        speaker.start()
+        speaker_ok = True
+    except Exception as exc:
+        ui.add_chat(f"[sys] Speaker init failed: {exc}")
 
     # --- Start camera ---
     camera_ok = False
@@ -140,15 +159,49 @@ async def run(stdscr, args):
                         await net.send_frame(local_lines, local_colors)
                         last_frame_time = now
 
+            # Local mic → network
+            if mic_active and veilid_ok and net.connected:
+                seq, pcm = mic.get_chunk()
+                if pcm is not None:
+                    await net.send_audio(seq, pcm)
+
             # Input
             msg = ui.handle_input()
             if msg:
                 handled = await _handle_command(
-                    msg, ui, net, chat, camera, identity, args
+                    msg, ui, net, chat, camera, mic, speaker,
+                    identity, args, mic_active,
                 )
                 if handled == "quit":
                     break
-                if not handled:
+                if handled == "mic_on":
+                    if not mic_active:
+                        try:
+                            mic.start()
+                            mic_active = True
+                            ui.mic_on = True
+                            ui.add_chat("[sys] Mic ON")
+                        except Exception as e:
+                            ui.add_chat(f"[sys] Mic error: {e}")
+                    else:
+                        ui.add_chat("[sys] Mic already on")
+                elif handled == "mic_off":
+                    if mic_active:
+                        mic.stop()
+                        mic_active = False
+                        ui.mic_on = False
+                        ui.add_chat("[sys] Mic OFF")
+                    else:
+                        ui.add_chat("[sys] Mic already off")
+                elif handled == "speaker_on":
+                    speaker.enabled = True
+                    ui.speaker_on = True
+                    ui.add_chat("[sys] Speaker ON")
+                elif handled == "speaker_off":
+                    speaker.enabled = False
+                    ui.speaker_on = False
+                    ui.add_chat("[sys] Speaker OFF")
+                elif not handled:
                     # Tag outgoing messages with our handle
                     handle = identity.handle if identity else None
                     sent_msg = await chat.send(msg)
@@ -162,6 +215,9 @@ async def run(stdscr, args):
             # Yield
             await asyncio.sleep(0.016)
     finally:
+        if mic_active:
+            mic.stop()
+        speaker.stop()
         camera.stop()
         if veilid_ok:
             await net.stop()
@@ -170,7 +226,8 @@ async def run(stdscr, args):
 # ──────────────────────────────────────────────────────────────────────
 # Slash-command handler
 # ──────────────────────────────────────────────────────────────────────
-async def _handle_command(text, ui, net, chat, camera, identity, args):
+async def _handle_command(text, ui, net, chat, camera, mic, speaker,
+                          identity, args, mic_active):
     """Return truthy if the text was a command, 'quit' to exit."""
     if not text.startswith("/"):
         return False
@@ -400,6 +457,54 @@ async def _handle_command(text, ui, net, chat, camera, identity, args):
             ui.add_chat(f"[sys] Error: {e}")
         return True
 
+    # ── Audio commands ──
+
+    if cmd == "/mic":
+        sub = arg.lower()
+        if sub == "on":
+            return "mic_on"
+        elif sub == "off":
+            return "mic_off"
+        else:
+            state = "ON" if mic_active else "OFF"
+            ui.add_chat(f"[sys] Mic is {state}")
+            ui.add_chat("[sys] /mic on|off")
+        return True
+
+    if cmd == "/speaker":
+        sub = arg.lower()
+        if sub == "on":
+            return "speaker_on"
+        elif sub == "off":
+            return "speaker_off"
+        else:
+            state = "ON" if speaker.enabled else "OFF"
+            ui.add_chat(f"[sys] Speaker is {state}")
+            ui.add_chat("[sys] /speaker on|off")
+        return True
+
+    if cmd == "/devices":
+        try:
+            devs = AudioCapture.list_devices()
+            if devs:
+                ui.add_chat("[sys] Audio input devices:")
+                for d in devs:
+                    ui.add_chat(f"[sys]   {d}")
+            else:
+                ui.add_chat("[sys] No audio input devices found")
+        except Exception as e:
+            ui.add_chat(f"[sys] Error: {e}")
+        return True
+
+    if cmd == "/banner":
+        if not arg:
+            ui.add_chat("[sys] Usage: /banner <text>")
+            return True
+        # Strip surrounding quotes if present
+        text = arg.strip("\"'")
+        ui.start_banner(text)
+        return True
+
     if cmd == "/help":
         sections = (
             ("── General ──", (
@@ -410,6 +515,12 @@ async def _handle_command(text, ui, net, chat, camera, identity, args):
                 "/color         toggle colour rendering",
                 "/preview       toggle local camera preview",
                 "/fps <1-30>    set outbound frame-rate",
+                "/banner <text> show block-letter overlay",
+            )),
+            ("── Audio ──", (
+                "/mic on|off    enable / disable microphone",
+                "/speaker on|off  enable / disable speaker",
+                "/devices       list audio input devices",
             )),
             ("── Camera ──", (
                 "/cam           show camera status",

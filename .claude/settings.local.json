@@ -31,7 +31,10 @@
       "Bash(\"C:\\\\Users\\\\d8rh8r\\\\Downloads\\\\Applied Security\\\\ascii-veilid-chat\\\\veilid\\\\target\\\\release\\\\veilid-server.exe\" --help)",
       "Bash(\"C:\\\\Users\\\\d8rh8r\\\\Downloads\\\\Applied Security\\\\ascii-veilid-chat\\\\veilid\\\\target\\\\release\\\\veilid-server.exe\" --dump-config)",
       "Bash(taskkill:*)",
-      "Bash(git remote add:*)"
+      "Bash(git remote add:*)",
+      "Bash(git push:*)",
+      "Bash(.chat/Scripts/python.exe:*)",
+      "Bash(.chat/Scripts/pip.exe install:*)"
     ]
   }
 }

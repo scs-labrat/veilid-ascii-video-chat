@@ -20,6 +20,9 @@ Layout
 import curses
 import sys
 import textwrap
+import time
+
+from block_font import render_word
 
 
 class TerminalUI:
@@ -50,6 +53,15 @@ class TerminalUI:
 
         # Room code (shown on its own full-width line for easy copying)
         self.room_code = None
+
+        # Audio indicators
+        self.mic_on = False
+        self.speaker_on = True  # speaker starts enabled (playback ready)
+
+        # Banner overlay
+        self.banner_words: list[str] = []
+        self.banner_index: int = 0
+        self.banner_start: float = 0.0
 
         # Curses setup
         curses.curs_set(1)
@@ -138,6 +150,61 @@ class TerminalUI:
         self.status_text = text
 
     # ------------------------------------------------------------------
+    # Banner overlay
+    # ------------------------------------------------------------------
+    def start_banner(self, text: str):
+        """Begin a banner animation showing *text* one word at a time."""
+        words = text.split()
+        if not words:
+            return
+        self.banner_words = words
+        self.banner_index = 0
+        self.banner_start = time.monotonic()
+
+    def _advance_banner(self):
+        """Move to the next word after 1 s, or clear when done."""
+        if not self.banner_words:
+            return
+        elapsed = time.monotonic() - self.banner_start
+        new_index = int(elapsed)  # one word per second
+        if new_index >= len(self.banner_words):
+            self.banner_words = []
+            return
+        self.banner_index = new_index
+
+    def _draw_banner_overlay(self):
+        """Render the current banner word centred over the video panel."""
+        if not self.banner_words:
+            return
+        word = self.banner_words[self.banner_index]
+        rows = render_word(word)
+        if not rows or not rows[0]:
+            return
+
+        text_w = len(rows[0])
+        text_h = len(rows)
+
+        # Centre on the video panel
+        start_y = max(0, (self.video_h - text_h) // 2)
+        start_x = max(0, (self.video_w - text_w) // 2)
+
+        attr = curses.A_BOLD | curses.A_REVERSE
+        for ri, row in enumerate(rows):
+            y = start_y + ri
+            if y >= self.video_h:
+                break
+            for ci, ch in enumerate(row):
+                if ch == " ":
+                    continue  # let video show through
+                x = start_x + ci
+                if x >= self.video_w:
+                    break
+                try:
+                    self.stdscr.addch(y, x, ch, attr)
+                except curses.error:
+                    pass
+
+    # ------------------------------------------------------------------
     # Render
     # ------------------------------------------------------------------
     def render(self):
@@ -148,6 +215,7 @@ class TerminalUI:
             if self.term_w < self.MIN_WIDTH or self.term_h < self.MIN_HEIGHT:
                 self._draw_too_small()
             else:
+                self._advance_banner()
                 has_peer = self.remote_frame is not None
                 if has_peer and self.remote_h > 0:
                     self._draw_video_panel(
@@ -161,6 +229,7 @@ class TerminalUI:
                         self.local_frame, self.local_colors,
                         local_y, 0, self.local_h, self.video_w, label,
                     )
+                self._draw_banner_overlay()
                 self._draw_divider()
                 self._draw_chat()
                 if self.show_room_bar:
@@ -278,7 +347,9 @@ class TerminalUI:
             pass
 
     def _draw_status(self):
-        bar = f" {self.status_text} "
+        mic_ind = "[MIC]" if self.mic_on else "[mic]"
+        spk_ind = "[SPK]" if self.speaker_on else "[spk]"
+        bar = f" {mic_ind} {spk_ind} | {self.status_text} "
         try:
             self.stdscr.addnstr(
                 self.status_y, 0,

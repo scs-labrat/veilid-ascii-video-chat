@@ -9,6 +9,7 @@ Room creation uses a DHT record with 2 subkeys:
 Once both route blobs are exchanged, real-time data flows over
 app_message using zlib-compressed JSON packets:
   {"t":"f", "l":[...], "c":[[...]]}   -- video frame (lines + colors)
+  {"t":"a", "seq":N, "d":"<b64pcm>"}  -- audio chunk (16kHz mono PCM)
   {"t":"m", "x":"text", "s":ts}       -- chat message
   {"t":"i", "h":"handle", "pk":"..."}  -- identity exchange
   {"t":"q"}                            -- quit / disconnect
@@ -45,6 +46,7 @@ class VeilidNet:
         # External callbacks
         self.on_frame = None   # (lines, colors) -> None
         self.on_chat = None    # (text, timestamp) -> None
+        self.on_audio = None   # (seq, pcm_bytes) -> None
         self.on_status = None  # (str) -> None
 
         self._msg_queue: asyncio.Queue = asyncio.Queue()
@@ -239,6 +241,10 @@ class VeilidNet:
                 kind = msg.get("t")
                 if kind == "f" and self.on_frame:
                     self.on_frame(msg["l"], msg["c"])
+                elif kind == "a" and self.on_audio:
+                    from audio_io import decode_audio_packet
+                    seq, pcm = decode_audio_packet(msg)
+                    self.on_audio(seq, pcm)
                 elif kind == "m" and self.on_chat:
                     self.on_chat(msg["x"], msg.get("s"))
                 elif kind == "i":
@@ -269,6 +275,10 @@ class VeilidNet:
 
     async def send_chat(self, text: str):
         await self._send_raw({"t": "m", "x": text, "s": time.time()})
+
+    async def send_audio(self, seq: int, pcm_bytes: bytes):
+        from audio_io import encode_audio_packet
+        await self._send_raw(encode_audio_packet(seq, pcm_bytes))
 
     # ------------------------------------------------------------------
     def _notify(self, text: str):

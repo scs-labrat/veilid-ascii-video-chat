@@ -21,6 +21,11 @@ Desktop.ini
 _bmad-output/
 _bmad/_memory/
 
+# Data / build artifacts
+chroma_db/
+*.spec
+*.zip
+
 # Veilid
 veilid/
 veilid-server.log
